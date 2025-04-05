@@ -1,0 +1,43 @@
+pm.test("Create Employee: status is 201", function() {
+  pm.response.to.have.status(201);
+});
+
+// Now after we've created the employee in the main app's DB, we
+// want to call the microservice that queries the DB. Let's do that:
+pm.sendRequest({
+  url: 'http://localhost:8080/api/query',  // your DB microservice
+  method: 'POST',
+  header: { 'Content-Type': 'application/json' },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify({
+      host: "MM10.gom.com\\LN12",
+      port: 9090,
+      user: "Testuser",
+      password: "P-l/Q",
+      trustServerCertificate: true,
+      database: "employee",
+      // The actual SQL to confirm row creation
+      sql: "SELECT * FROM Employees WHERE email='alice@example.com'"
+    })
+  }
+}, (err, res) => {
+  if (err) {
+    console.log("Error calling DB microservice:", err);
+    return;
+  }
+
+  let dbData;
+  try {
+    dbData = res.json();
+  } catch (parseErr) {
+    console.log("Failed to parse JSON from DB microservice:", parseErr);
+    return;
+  }
+
+  // Example test that the row was inserted
+  pm.test("Row for 'alice@example.com' was found", function() {
+    pm.expect(dbData).to.have.property("rows");
+    pm.expect(dbData.rows.length).to.be.greaterThan(0);
+  });
+});

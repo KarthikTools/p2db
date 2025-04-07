@@ -1,0 +1,188 @@
+
+
+// 1) Parse the current response as JSON
+if (pm.response.code === 200) {
+    let jsonData = pm.response.json();
+
+    // 2) pm.sendRequest() to your local CSV-writing endpoint
+    pm.sendRequest({
+        url: 'http://localhost:8080/api/updateCsv',
+        method: 'POST',
+        header: {
+            'Content-Type': 'application/json'
+        },
+        body: {
+            mode: 'raw',
+            raw: JSON.stringify(jsonData)
+        }
+    }, function (err, res) {
+        if (err) {
+            console.log('Error sending data to CSV server:', err);
+        } else {
+            console.log('CSV server response status:', res.status);
+            console.log('CSV server response body:', res.text());
+        }
+    });
+}
+
+
+
+1. For Any Non-JSON Response (XML, HTML, Text, etc.)
+
+Regardless of the format, you can always grab the raw string using:
+
+const rawBody = pm.response.text();
+You could then send that entire string to your local endpoint. For example, you could treat the raw response as a single field in your CSV:
+
+pm.sendRequest({
+  url: 'http://localhost:8080/api/updateCsv',
+  method: 'POST',
+  header: {
+    'Content-Type': 'application/json'
+  },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify({
+      rawResponse: rawBody
+    })
+  }
+}, function (err, res) {
+  if (err) {
+    console.log('Error sending data to CSV server:', err);
+  } else {
+    console.log('CSV server response status:', res.status);
+    console.log('CSV server response body:', res.text());
+  }
+});
+In your CSV
+You’ll end up with a column called rawResponse, and each row is the entire text of that response (which might be XML, HTML, or just text).
+
+
+2. Parsing XML in Postman (Optional)
+
+If you need to extract specific fields from XML (instead of just storing the whole XML as a single string), you can use the built-in Postman function xml2Json to convert XML to a JavaScript object. For example:
+
+const rawXml = pm.response.text();
+let xmlObject = xml2Json(rawXml);
+
+// Now xmlObject is a nested JS object representation of your XML
+// Example: if rawXml = <root><id>123</id><name>John</name></root>
+// xmlObject might look like { root: { id: '123', name: 'John' } }
+
+let dataToWrite = {
+    id: xmlObject.root.id,
+    name: xmlObject.root.name
+    // etc...
+};
+
+// Then forward dataToWrite to your local service as JSON
+pm.sendRequest({
+  url: 'http://localhost:8080/api/updateCsv',
+  method: 'POST',
+  header: { 'Content-Type': 'application/json' },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify(dataToWrite)
+  }
+}, function (err, res) {
+  // ...
+});
+This way, your local CSV service will receive just the relevant fields and can append them to the CSV in separate columns (id, name, etc.).
+
+Note: If you have deeply nested XML, you might need to navigate multiple layers in the resulting xmlObject. Also, xml2Json is built into Postman’s scripting environment, but it can be somewhat limited for very complex XML.
+
+
+3. Parsing HTML in Postman (Optional)
+
+Postman does not come with a built-in HTML parser like Cheerio by default. You have a couple of options:
+
+Regex: If you only need small pieces of data from an HTML string and you know the pattern, you can do a quick regex. Example:
+const rawHtml = pm.response.text();
+const titleMatch = rawHtml.match(/<title>([^<]+)<\/title>/);
+let extractedTitle = titleMatch ? titleMatch[1] : "Not found";
+
+pm.sendRequest({
+  url: 'http://localhost:8080/api/updateCsv',
+  method: 'POST',
+  header: { 'Content-Type': 'application/json' },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify({ pageTitle: extractedTitle })
+  }
+}, function (err, res) {
+  // ...
+});
+Forward raw HTML: If you don’t care about parsing, just forward the entire string (like the raw approach in #1).
+If you need advanced HTML parsing (like DOM queries, selecting elements, etc.), you usually do that in a Node.js script outside Postman or in a custom local service. Postman’s sandbox is intentionally restricted.
+
+
+4. Parsing Plain Text
+
+If your response is just plain text—like status messages or logs:
+
+const rawText = pm.response.text();
+
+// Suppose you want to parse a "key=value" line in the text
+// e.g., "status=OK|time=2023-02-02 12:00:00"
+let lines = rawText.split('|'); 
+// lines might be ["status=OK", "time=2023-02-02 12:00:00"]
+
+let resultObj = {};
+lines.forEach(line => {
+    let [key, value] = line.split('=');
+    resultObj[key.trim()] = value.trim();
+});
+
+// resultObj = { status: "OK", time: "2023-02-02 12:00:00" }
+
+// Forward to local service
+pm.sendRequest({
+  url: 'http://localhost:8080/api/updateCsv',
+  method: 'POST',
+  header: { 'Content-Type': 'application/json' },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify(resultObj)
+  }
+}, function (err, res) {
+   // ...
+});
+
+
+6. Example Postman Test (Pseudocode for XML or text)
+
+Below is a generic example that:
+
+Checks if the response code is 200.
+Extracts the raw text.
+Sends it (unmodified) to the local CSV service.
+
+if (pm.response.code === 200) {
+    // 1) Get the raw body (works for XML/HTML/text)
+    let body = pm.response.text();
+
+    // 2) Build a JSON object with the entire response under one key
+    let dataToSend = {
+        originalResponse: body
+    };
+
+    // 3) Forward that to our local Spring Boot CSV endpoint
+    pm.sendRequest({
+        url: 'http://localhost:8080/api/updateCsv',
+        method: 'POST',
+        header: {
+            'Content-Type': 'application/json'
+        },
+        body: {
+            mode: 'raw',
+            raw: JSON.stringify(dataToSend)
+        }
+    }, function (err, res) {
+        if (err) {
+            console.log('Error sending data to CSV service:', err);
+        } else {
+            console.log('CSV service response code:', res.status);
+            console.log('CSV service response body:', res.text());
+        }
+    });
+}
